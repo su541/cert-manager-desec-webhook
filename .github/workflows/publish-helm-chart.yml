@@ -17,12 +17,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.15.4
-
-
       - name: Compute chart version
         id: ver
         run: |
@@ -34,11 +28,6 @@ jobs:
           VERSION="${BASE_VERSION}-${SHORT_SHA}"
           echo "chart_dir=${CHART_DIR}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
-      - name: Install yq
-        run: |
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
 
       - name: Login to GHCR
         run: |
