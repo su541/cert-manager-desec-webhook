@@ -1,5 +1,15 @@
-apiVersion: v1
-appVersion: "1.0"
-description: A Helm chart for Kubernetes
+apiVersion: v2
 name: cert-manager-desec-webhook
-version: 1.0.0
+description: cert-manager ACME DNS01 webhook solver for deSEC (desec.io)
+type: application
+home: https://github.com/su541/cert-manager-desec-webhook
+sources:
+  - https://github.com/su541/cert-manager-desec-webhook
+keywords:
+  - cert-manager
+  - acme
+  - dns01
+  - desec
+# version and appVersion are set by the release workflow from the Git tag.
+version: 1.0.1
+appVersion: "1.0.1"
