@@ -10,6 +10,5 @@ keywords:
   - acme
   - dns01
   - desec
-# version and appVersion are set by the release workflow from the Git tag.
-version: 1.0.1
-appVersion: "1.0.1"
+version: 2.0.0
+appVersion: 2.0.0
