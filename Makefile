@@ -1,45 +1,51 @@
-GO ?= $(shell which go)
-OS ?= $(shell $(GO) env GOOS)
-ARCH ?= $(shell $(GO) env GOARCH)
+GO ?= go
 
-IMAGE_NAME := "webhook"
-IMAGE_TAG := "latest"
+IMAGE_NAME ?= cert-manager-desec-webhook
+IMAGE_TAG ?= dev
 
 OUT := $(shell pwd)/_out
+CHART_DIR := deploy/desec-webhook
 
-KUBEBUILDER_VERSION=1.28.0
+# Kubernetes version of the envtest binaries for the conformance tests.
+ENVTEST_K8S_VERSION ?= 1.36.x
+ENVTEST_DIR := $(shell pwd)/_test/envtest
+SETUP_ENVTEST := $(GO) run sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.24
 
-HELM_FILES := $(shell find deploy/example-webhook)
+.PHONY: test
+test:
+	$(GO) vet ./...
+	$(GO) test -race -cover ./...
 
-test: _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/etcd _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/kube-apiserver _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/kubectl
-	TEST_ASSET_ETCD=_test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/etcd \
-	TEST_ASSET_KUBE_APISERVER=_test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/kube-apiserver \
-	TEST_ASSET_KUBECTL=_test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/kubectl \
-	$(GO) test -v .
+# Runs the cert-manager DNS01 conformance suite against the real deSEC API.
+# Needs TEST_ZONE_NAME (e.g. example.com.) and DESEC_TOKEN.
+.PHONY: test-conformance
+test-conformance:
+	@test -n "$(TEST_ZONE_NAME)" || (echo "TEST_ZONE_NAME is not set" && exit 1)
+	@test -n "$$DESEC_TOKEN" || (echo "DESEC_TOKEN is not set" && exit 1)
+	ASSETS="$$($(SETUP_ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(ENVTEST_DIR) -p path)" && \
+	TEST_ASSET_ETCD="$$ASSETS/etcd" \
+	TEST_ASSET_KUBE_APISERVER="$$ASSETS/kube-apiserver" \
+	TEST_ASSET_KUBECTL="$$ASSETS/kubectl" \
+	$(GO) test -tags conformance -run TestConformance -count=1 -v .
 
-_test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH).tar.gz: | _test
-	curl -fsSL https://go.kubebuilder.io/test-tools/$(KUBEBUILDER_VERSION)/$(OS)/$(ARCH) -o $@
-
-_test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/etcd _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/kube-apiserver _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)/kubectl: _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH).tar.gz | _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH)
-	tar xfO $< kubebuilder/bin/$(notdir $@) > $@ && chmod +x $@
-
-.PHONY: clean
-clean:
-	rm -r _test $(OUT)
+.PHONY: lint-chart
+lint-chart:
+	helm lint --strict $(CHART_DIR)
 
 .PHONY: build
 build:
 	docker build -t "$(IMAGE_NAME):$(IMAGE_TAG)" .
 
 .PHONY: rendered-manifest.yaml
-rendered-manifest.yaml: $(OUT)/rendered-manifest.yaml
+rendered-manifest.yaml: | $(OUT)
+	helm template desec-webhook \
+	    --set image.repository=$(IMAGE_NAME) \
+	    --set image.tag=$(IMAGE_TAG) \
+	    $(CHART_DIR) > $(OUT)/rendered-manifest.yaml
 
-$(OUT)/rendered-manifest.yaml: $(HELM_FILES) | $(OUT)
-	helm template \
-	    --name desec-webhook \
-            --set image.repository=$(IMAGE_NAME) \
-            --set image.tag=$(IMAGE_TAG) \
-            deploy/example-webhook > $@
+.PHONY: clean
+clean:
+	rm -rf _test $(OUT)
 
-_test $(OUT) _test/kubebuilder-$(KUBEBUILDER_VERSION)-$(OS)-$(ARCH):
+$(OUT):
 	mkdir -p $@

@@ -1,4 +1,5 @@
-affinity: {}
+replicaCount: 1
+
 certManager:
   namespace: cert-manager
   serviceAccountName: cert-manager
@@ -6,24 +7,42 @@ certManager:
 nameOverride: ""
 fullnameOverride: ""
 
+# API group of the webhook. Must match spec.acme.solvers[].dns01.webhook.groupName
+# in the Issuer/ClusterIssuer.
 groupName: de.su541.acme
+
 image:
-  repository: "ghcr.io/su541/cert-manager-desec-webhook"
-  tag: latest
+  repository: ghcr.io/su541/cert-manager-desec-webhook
+  # Defaults to the chart's appVersion.
+  tag: ""
   pullPolicy: IfNotPresent
 
+# Names of the secrets (in the release namespace) holding deSEC API tokens.
+# The webhook may only read these secrets.
 secretName:
   - desec-io-token
+
+# Port the webhook listens on inside the container. The image runs as a
+# non-root user, so this must be above 1024.
+containerPort: 8443
 
 service:
   port: 443
   type: ClusterIP
 
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
 resources: {}
-  # We usually recommend not to specify default resources and to leave this as a conscious
-  # choice for the user. This also increases chances charts run on environments with little
-  # resources, such as Minikube. If you do want to specify resources, uncomment the following
-  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
   # limits:
   #  cpu: 100m
   #  memory: 128Mi
@@ -34,3 +53,5 @@ resources: {}
 nodeSelector: {}
 
 tolerations: []
+
+affinity: {}

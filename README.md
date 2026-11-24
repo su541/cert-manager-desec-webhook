@@ -8,21 +8,30 @@ This solver can be used with [desec.io](https://desec.io) DNS API. The documenta
 of the API can be found [here](https://desec.readthedocs.io/en/latest/)
 
 ## Requirements
-- [go](https://golang.org) => 1.22.0
-- [helm](https://helm.sh/) >= v3.0.0
-- [kuberentes](https://kubernetes.io/) => 1.25.0
-- [cert-manager](https://cert-managaer.io/) => 1.15.1
+- [helm](https://helm.sh/) >= v3.8.0 (OCI support)
+- [kubernetes](https://kubernetes.io/)
+- [cert-manager](https://cert-manager.io/)
+- for development: [go](https://golang.org) >= 1.26
 
 ## Installation
+
+### Using the public helm chart (OCI)
+```bash
+helm install desec-webhook -n cert-manager \
+  oci://ghcr.io/su541/helm/cert-manager-desec-webhook --version <version>
+```
+Available versions are listed on the [releases page](https://github.com/su541/cert-manager-desec-webhook/releases).
+The image tag defaults to the chart's `appVersion`, so chart and image always match.
 
 ### Using helm from local checkout
 ```bash
 helm install desec-webhook -n cert-manager deploy/desec-webhook
 ```
-### Using public helm chart
-
 
 ## Uninstallation
+```bash
+helm uninstall desec-webhook -n cert-manager
+```
 
 ## Creating an issuer
 
@@ -42,9 +51,10 @@ data:
 kubectl create secret generic desec-io-token --from-literal "token=<your token>" --namespace cert-manager
 ```
 
-We can also then provide a standardised 'testing framework', or set of
-conformance tests, which allow us to validate that a DNS provider works as
-expected.
+The webhook may only read the secrets listed in `secretName` (values.yaml) in the
+namespace it is installed in. With a `ClusterIssuer`, put the secret into that
+namespace (usually `cert-manager`).
+
 Create a 'ClusterIssuer' or 'Issuer' resource as the following:
 
 ```yaml
@@ -69,6 +79,45 @@ spec:
                 name: desec-io-token
             groupName: de.su541.acme
             solverName: desec
+```
+
+### Using a namespaced Issuer
+
+A `ClusterIssuer` reads the token secret from cert-manager's cluster resource
+namespace (usually `cert-manager`), so one secret serves the whole cluster.
+
+A namespaced `Issuer` reads the token secret from **its own namespace**. This
+is intentional: whoever can create an `Issuer` in a namespace must not be able
+to use a token stored somewhere else. The chart only grants the webhook access
+to secrets in its own namespace, so for each additional namespace allow the
+webhook to read that one secret:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: desec-webhook:secret-reader
+  namespace: my-app
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["desec-io-token"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: desec-webhook:secret-reader
+  namespace: my-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: desec-webhook:secret-reader
+subjects:
+  - kind: ServiceAccount
+    # kubectl -n cert-manager get serviceaccounts
+    name: desec-webhook-cert-manager-desec-webhook
+    namespace: cert-manager
 ```
 
 ## Create a manual certificate
@@ -124,26 +173,43 @@ spec:
 
 ```
 
-### Creating your own repository
+## Development
 
-### Running the test suite
-
-All DNS providers **must** run the DNS01 provider conformance testing suite,
-else they will have undetermined behaviour when used with cert-manager.
-
-Provide a secret.yaml in testdata/desec
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: desec-token
-data:
-  token: your-key-base64-encoded
-type: Opaque
+### Unit tests
+```bash
+make test
 ```
+The unit tests run against an in-memory fake of the deSEC API and a fake
+Kubernetes client. They need no credentials.
 
-Define a **TEST_ZONE_NAME** matching to your authenticaton creditials.
+### Conformance tests
+All DNS providers **must** pass the cert-manager DNS01 conformance suite. It
+runs against the real deSEC API and needs a deSEC domain and an API token:
 
 ```bash
-$ TEST_ZONE_NAME=example.com. make test
+export DESEC_TOKEN=<your token>
+TEST_ZONE_NAME=example.com. make test-conformance
 ```
+The token is only written to a temporary directory during the test.
+
+## Releases
+
+Versioning follows [Semantic Versioning](https://semver.org/) and is derived
+from [Conventional Commits](https://www.conventionalcommits.org/) by
+[release-please](https://github.com/googleapis/release-please):
+
+| Commit / PR title | Version bump |
+|---|---|
+| `fix: ...` | patch |
+| `feat: ...` | minor |
+| `feat!: ...` or footer `BREAKING CHANGE: ...` | major |
+| `docs:`, `chore:`, `ci:`, `test:`, `refactor:` | none |
+
+PRs are squash-merged, so the **PR title** must be a Conventional Commit (checked by CI).
+release-please keeps a release PR open that collects the changes. Merging it
+creates the tag `vX.Y.Z`, the GitHub release and `CHANGELOG.md`, and publishes
+
+- the image `ghcr.io/su541/cert-manager-desec-webhook` with the tags `X.Y.Z`, `X.Y`, `X` and `latest` (cosign-signed)
+- the chart `oci://ghcr.io/su541/helm/cert-manager-desec-webhook` with version `X.Y.Z`
+
+Every push to `master` additionally publishes the image tags `master` and `sha-<commit>`.

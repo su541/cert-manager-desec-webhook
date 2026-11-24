@@ -1,24 +1,24 @@
-FROM golang:1.22-alpine3.19 AS build_deps
-
-RUN apk add --no-cache git
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
 
 WORKDIR /workspace
 
-COPY go.mod .
-COPY go.sum .
-
+COPY go.mod go.sum ./
 RUN go mod download
 
-FROM build_deps AS build
+COPY *.go ./
 
-COPY . .
+ARG TARGETOS
+ARG TARGETARCH
 
-RUN CGO_ENABLED=0 go build -o webhook -ldflags '-w -extldflags "-static"' .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
+    go build -trimpath -ldflags "-s -w" -o webhook .
 
-FROM alpine:3.18
+FROM gcr.io/distroless/static-debian12:nonroot
 
-RUN apk add --no-cache ca-certificates
+LABEL org.opencontainers.image.source="https://github.com/su541/cert-manager-desec-webhook"
 
 COPY --from=build /workspace/webhook /usr/local/bin/webhook
 
-ENTRYPOINT ["webhook"]
+USER nonroot:nonroot
+
+ENTRYPOINT ["/usr/local/bin/webhook"]

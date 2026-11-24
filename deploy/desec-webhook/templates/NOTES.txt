@@ -1,0 +1,15 @@
+The deSEC webhook {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }}.
+
+Reference it from an Issuer or ClusterIssuer:
+
+  solvers:
+    - dns01:
+        webhook:
+          groupName: {{ .Values.groupName }}
+          solverName: desec
+          config:
+            apiKeySecretRef:
+              name: {{ first .Values.secretName }}
+              key: token
+
+The token secret must exist in the namespace {{ .Release.Namespace }}.
