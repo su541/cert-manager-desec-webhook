@@ -81,6 +81,45 @@ spec:
             solverName: desec
 ```
 
+### Using a namespaced Issuer
+
+A `ClusterIssuer` reads the token secret from cert-manager's cluster resource
+namespace (usually `cert-manager`), so one secret serves the whole cluster.
+
+A namespaced `Issuer` reads the token secret from **its own namespace**. This
+is intentional: whoever can create an `Issuer` in a namespace must not be able
+to use a token stored somewhere else. The chart only grants the webhook access
+to secrets in its own namespace, so for each additional namespace allow the
+webhook to read that one secret:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: desec-webhook:secret-reader
+  namespace: my-app
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["desec-io-token"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: desec-webhook:secret-reader
+  namespace: my-app
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: desec-webhook:secret-reader
+subjects:
+  - kind: ServiceAccount
+    # kubectl -n cert-manager get serviceaccounts
+    name: desec-webhook-cert-manager-desec-webhook
+    namespace: cert-manager
+```
+
 ## Create a manual certificate
 
 ```yaml
